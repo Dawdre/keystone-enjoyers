@@ -13,7 +13,7 @@ interface CharacterProfile {
 
 export async function useCharacterProfile(
   regionHost: BlizzAPIHosts,
-  characterKeystones: Ref<any, any>
+  characterKeystones: Ref<Array<Character>>
 ) {
   const allProfiles = ref<Array<CharacterProfile>>()
   const isLoadingProfile = ref(false)
@@ -30,33 +30,30 @@ export async function useCharacterProfile(
     Authorization: `Bearer ${token.value.access_token}`
   }
 
-  allProfiles.value = await Promise.all(
-    characterKeystones.value.map(async (player: Character) => {
-      const encodedCharacter = encodeURIComponent(player.characterName.toLowerCase())
-      const uri = `${regionHost}/profile/wow/character/${slug(player.characterRealm)}/${encodedCharacter}?${queryParams}`
+  const promises = characterKeystones.value.map(async (player: Character) => {
+    const encodedCharacter = encodeURIComponent(player.characterName.toLowerCase())
+    const uri = `${regionHost}/profile/wow/character/${slug(player.characterRealm)}/${encodedCharacter}?${queryParams}`
 
-      isLoadingProfile.value = true
+    isLoadingProfile.value = true
 
-      const {
-        data: profileDataResponse,
-        isFetching: isLoadingProfileData,
-        error
-      } = await useFetch(uri, { headers }).json()
+    const { data: profileDataResponse, error } = await useFetch(uri, { headers }).json()
 
-      if (!error.value) {
-        const { data: profileDataMediaResponse, isFetching: isLoadingProfileMedia } =
-          await useFetch(profileDataResponse.value.media.href, { headers }).json()
+    if (!error.value) {
+      const { data: profileDataMediaResponse } = await useFetch(
+        profileDataResponse.value.media.href,
+        { headers }
+      ).json()
 
-        return {
-          profileData: profileDataResponse.value,
-          profileDataMedia: profileDataMediaResponse.value
-        }
-      }
-    })
-  )
+      return {
+        profileData: profileDataResponse.value,
+        profileDataMedia: profileDataMediaResponse.value
+      } as CharacterProfile
+    }
+  })
+  const results = await Promise.all(promises)
 
-  allProfiles.value = allProfiles.value.filter(Boolean)
   isLoadingProfile.value = false
+  allProfiles.value = results.filter(Boolean) as Array<CharacterProfile>
 
   const getCharacterProfile = (name: string) =>
     computed(() => {
@@ -67,8 +64,8 @@ export async function useCharacterProfile(
       return foundItem ? foundItem : null
     })
 
-  const getImageType = (type: string, name: string) =>
-    computed(() => {
+  const getImageType = (type: 'avatar' | 'inset' | 'main-raw', name: string) =>
+    computed<string>(() => {
       const foundItem = getCharacterProfile(name).value?.profileDataMedia.assets.find(
         (data: Record<string, any>) => data.key === type
       )
